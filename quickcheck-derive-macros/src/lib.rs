@@ -15,7 +15,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         let identifier = &field.ident;
                         let ty = &field.ty;
                         quote! {
-                            #identifier: <Self as ::quickcheck::Arbitrary>::arbitrary(g)
+                            #identifier: <#ty as ::quickcheck::Arbitrary>::arbitrary(g)
                         }
                     })
                     .collect::<Vec<_>>();
@@ -27,7 +27,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
                             .ident
                             .clone()
                             .expect("Named identifier must have an identifier");
-                        let ty = &field.ty;
                         let unique_self = format_ident!("self_{}", ident);
                         quote! {
                             let #unique_self = <Self as ::std::clone::Clone>::clone(&self);
@@ -51,7 +50,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         .collect::<Vec<_>>();
                     let ty = &field.ty;
                     quote! {
-                        ::std::iter::Iterator::map(&<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
+                        ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
                             move |e| Self {#ident: e, #(#other_idents),*})
                     }
                 }).rev().reduce(|a, b| quote! {::std::iter::Iterator::chain(#a, #b)}).unwrap_or(quote!{});
