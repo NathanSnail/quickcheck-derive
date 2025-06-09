@@ -1,6 +1,75 @@
 use proc_macro::{self, TokenStream};
+use proc_macro2::Span;
 use quote::{format_ident, quote};
-use syn::{DeriveInput, parse_macro_input};
+use syn::{DeriveInput, Field, Ident, Type, parse_macro_input, punctuated::Punctuated};
+
+fn generate_product_shrink<T>(
+    fields: &Punctuated<Field, T>,
+    constructor: impl Fn(
+        &Type,
+        &Ident,
+        &Vec<(Ident, proc_macro2::TokenStream)>,
+    ) -> proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let self_copies = fields
+        .iter()
+        .map(|field| {
+            let ident = field
+                .ident
+                .clone()
+                .expect("Named identifier must have an identifier");
+            let unique_self = format_ident!("self_{}", ident);
+            quote! {
+                let #unique_self = <Self as ::std::clone::Clone>::clone(&self);
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let cloning_iterator_madness = fields
+        .iter()
+        .enumerate()
+        .map(|(idx, field)| {
+            let ident = Ident::new(
+                &field
+                    .ident
+                    .clone()
+                    .map(|ident| ident.to_string())
+                    .unwrap_or(idx.to_string()),
+                Span::call_site(),
+            );
+            let other_idents = fields
+                .iter()
+                .enumerate()
+                .map(|(idx, field)| {
+                    Ident::new(
+                        &field
+                            .ident
+                            .clone()
+                            .map(|ident| ident.to_string())
+                            .unwrap_or(idx.to_string()),
+                        Span::call_site(),
+                    )
+                })
+                .filter(|e| e != &ident)
+                .map(|field_ident| {
+                    let unique_self = format_ident!("self_{}", ident);
+                    (
+                        field_ident.clone(),
+                        quote! {::core::clone::Clone::clone(&#unique_self.#field_ident)},
+                    )
+                })
+                .collect::<Vec<_>>();
+            constructor(&field.ty, &ident, &other_idents)
+        })
+        .rev()
+        .reduce(|a, b| quote! {::std::iter::Iterator::chain(#a, #b)})
+        .unwrap_or(quote! {});
+
+    quote! {
+        #(#self_copies)*
+        ::std::boxed::Box::new(#cloning_iterator_madness)
+    }
+}
 
 #[proc_macro_derive(QuickCheck)]
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -19,46 +88,19 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         }
                     })
                     .collect::<Vec<_>>();
-                let self_copies = fields_named
-                    .named
-                    .iter()
-                    .map(|field| {
-                        let ident = field
-                            .ident
-                            .clone()
-                            .expect("Named identifier must have an identifier");
-                        let unique_self = format_ident!("self_{}", ident);
-                        quote! {
-                            let #unique_self = <Self as ::std::clone::Clone>::clone(&self);
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                let cloning_iterator_madness = fields_named.named.iter().map(|field| {
-                    let ident = field
-                        .ident
-                        .clone()
-                        .unwrap();
-                    let other_idents = fields_named
-                        .named
-                        .iter()
-                        .map(|field| field.ident.clone().unwrap())
-                        .filter(|e| e != &ident)
-                        .map(|field_ident| {
-                            let unique_self = format_ident!("self_{}", ident);
-                            quote! {#field_ident: ::core::clone::Clone::clone(&#unique_self.#field_ident)}})
-                        .collect::<Vec<_>>();
-                    let ty = &field.ty;
-                    quote! {
-                        ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
-                            move |e| Self {#ident: e, #(#other_idents),*})
-                    }
-                }).rev().reduce(|a, b| quote! {::std::iter::Iterator::chain(#a, #b)}).unwrap_or(quote!{});
                 (
-                    quote! {
-                        #(#self_copies)*
-                        ::std::boxed::Box::new(#cloning_iterator_madness)
-                    },
+                    generate_product_shrink(&fields_named.named, |ty, ident, other_idents| {
+                        let other_idents_initialisers = other_idents
+                            .iter()
+                            .map(|(ident, toks)| {
+                                quote! {#ident: #toks}
+                            })
+                            .collect::<Vec<_>>();
+                        quote! {
+                            ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
+                                move |e| Self {#ident: e, #(#other_idents_initialisers),*})
+                        }
+                    }),
                     quote! {
                         Self {
                             #(#field_arbitrary_generators),*
