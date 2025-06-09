@@ -83,7 +83,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 }
             }
         }
-        syn::Data::Union(data_union) => todo!(),
+        syn::Data::Union(_) => {
+            syn::Error::new_spanned(&ident, "Cannot derive QuickCheck for a union yet")
+                .to_compile_error()
+        }
     };
     let output = quote! {
         impl ::quickcheck::Arbitrary for #ident
