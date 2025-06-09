@@ -74,7 +74,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             quote! {
                 match <::core::primitive::usize as ::quickcheck::Arbitrary>::arbitrary(g) % #num_variants {
                     #(#initialisers),*,
-                    _ => ::core::unreachable!();
+                    _ => ::core::unreachable!()
                 }
             }
         }
