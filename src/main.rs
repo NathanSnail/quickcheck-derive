@@ -7,7 +7,17 @@ struct Thing {
 }
 
 #[derive(Clone, QuickCheck)]
+struct Vector3 {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(Clone, QuickCheck)]
 struct PositiveF32(f32);
+
+#[derive(Clone, QuickCheck)]
+struct Pair(f32, f32);
 
 #[derive(Clone, QuickCheck)]
 struct Unit;
@@ -16,6 +26,7 @@ struct Unit;
 enum Something {
     Int(i32),
     Float(f32),
+    Pair(f32, f32),
 }
 
 fn main() {

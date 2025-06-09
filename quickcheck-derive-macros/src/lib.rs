@@ -15,7 +15,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         let identifier = &field.ident;
                         let ty = &field.ty;
                         quote! {
-                            #identifier: <#ty as ::quickcheck::Arbitrary>::arbitrary(g),
+                            #identifier: <#ty as ::quickcheck::Arbitrary>::arbitrary(g)
                         }
                     })
                     .collect::<Vec<_>>();
@@ -32,7 +32,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     .map(|field| {
                         let ty = &field.ty;
                         quote! {
-                            <#ty as ::quickcheck::Arbitrary>::arbitrary(g),
+                            <#ty as ::quickcheck::Arbitrary>::arbitrary(g)
                         }
                     })
                     .collect::<Vec<_>>();
