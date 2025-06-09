@@ -11,10 +11,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 let field_arbitrary_generators = fields_named
                     .named
                     .iter()
-                    .map(|x| {
-                        let identifier = &x.ident;
+                    .map(|field| {
+                        let identifier = &field.ident;
+                        let ty = &field.ty;
                         quote! {
-                            #identifier: ::quickcheck::Arbitrary::arbitrary(g),
+                            #identifier: <#ty as ::quickcheck::Arbitrary>::arbitrary(g),
                         }
                     })
                     .collect::<Vec<_>>();
@@ -28,9 +29,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 let field_arbitrary_generators = fields_unnamed
                     .unnamed
                     .iter()
-                    .map(|_| {
+                    .map(|field| {
+                        let ty = &field.ty;
                         quote! {
-                            ::quickcheck::Arbitrary::arbitrary(g),
+                            <#ty as ::quickcheck::Arbitrary>::arbitrary(g),
                         }
                     })
                     .collect::<Vec<_>>();
@@ -54,7 +56,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
                                 let field_arbitrary_generators = variant
                                     .fields
                                     .iter()
-                                    .map(|_| quote! {::quickcheck::Arbitrary::arbitrary(g)})
+                                    .map(|field| {
+                                        let ty = &field.ty;
+                                        quote! {<#ty as ::quickcheck::Arbitrary>::arbitrary(g)}
+                                    })
                                     .collect::<Vec<_>>();
                                 quote! {(#(#field_arbitrary_generators),*)}
                             }
