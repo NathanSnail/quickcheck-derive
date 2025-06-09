@@ -1,0 +1,8 @@
+[*.rs]
+indent_style = space
+indent_size = 4
+
+# We need this for tree sitter testing to be easy
+[*.fancy_hex]
+indent_style = space
+indent_size = 6
