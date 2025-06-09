@@ -1,0 +1,13 @@
+[package]
+name = "quickcheck-derive-macros"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+proc-macro2 = "1.0.95"
+quickcheck = "1.0.3"
+quote = "1.0.40"
+syn = { version = "2.0.101", features = ["full", "extra-traits"] }
+
+[lib]
+proc-macro = true

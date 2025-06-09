@@ -1,0 +1,8 @@
+[package]
+name = "quickcheck-derive"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quickcheck = "1.0.3"
+quickcheck-derive-macros = { version = "0.1.0", path = "quickcheck-derive-macros" }
