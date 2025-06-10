@@ -23,6 +23,12 @@ struct Stringy {
 }
 
 #[derive(Clone, QuickCheck)]
+enum Basic {
+    A,
+    B,
+}
+
+#[derive(Clone, QuickCheck)]
 enum Something {
     Int(i32),
     Float(f32),

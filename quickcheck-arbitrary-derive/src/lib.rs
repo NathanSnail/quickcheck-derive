@@ -280,7 +280,12 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
             let underscores = (0..variant.fields.len())
                 .map(|_| quote! {_})
                 .collect::<Vec<_>>();
-            quote! {#enum_name::#variant_ident(#(#underscores),*) => {#shrinker}}
+
+             match variant.fields.is_empty() {
+                true => quote!{#enum_name::#variant_ident => ::std::boxed::Box::new(::quickcheck::empty_shrinker())},
+                false => quote! {#enum_name::#variant_ident(#(#underscores),*) => {#shrinker}} ,
+            }
+
         })
         .collect::<Vec<_>>();
 
