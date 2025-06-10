@@ -343,11 +343,13 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let generics_arbitrary = generics
         .lifetimes()
         .map(|lifetime| lifetime.to_token_stream())
-        .chain(
-            generics
-                .type_params()
-                .map(|type_param| quote! {#type_param + ::quickcheck::Arbitrary}),
-        )
+        .chain(generics.type_params().map(|type_param| {
+            let colon = match type_param.bounds.len() {
+                0 => quote! {:},
+                _ => quote! {+},
+            };
+            quote! {#type_param #colon ::quickcheck::Arbitrary}
+        }))
         .collect::<Vec<_>>();
 
     let generics_unconstrained_tokens = match generics_unconstrained.len() {
