@@ -5,7 +5,7 @@ repository = "https://github.com/NathanSnail/quickcheck-derive"
 readme = "../README.md"
 version = "0.1.0"
 edition = "2024"
-license = "MIT OR UNLICENSE"
+license = "MIT OR Unlicense"
 
 [dependencies]
 proc-macro2 = "1.0.95"
