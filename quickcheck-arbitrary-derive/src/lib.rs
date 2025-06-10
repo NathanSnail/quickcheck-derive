@@ -1,5 +1,3 @@
-use std::u64;
-
 use proc_macro::{self};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
@@ -79,8 +77,7 @@ fn generate_product_shrink<
         .rev()
         .cloned()
         .reduce(|a, b| quote! {::std::iter::Iterator::chain(#a, #b)})
-        .unwrap_or(quote! {})
-        .into();
+        .unwrap_or(quote! {});
 
     quote! {
         #(#self_copies)*
@@ -271,13 +268,12 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
                 },
                 |ident_str| LitInt::new(ident_str, Span::call_site()),
                 |ident, field, num_fields| {
-                    let puller = make_enum_puller(
+                   make_enum_puller(
                         field.base10_parse().unwrap(),
                         num_fields - 1,
                         variant_ident,
                         &ident,
-                    );
-                    puller
+                    )
                 },
             );
 
@@ -361,7 +357,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         _ => quote! {<#(#generics_arbitrary),*>},
     };
 
-    if generics.lifetimes().collect::<Vec<_>>().len() != 0 {
+    if !generics.lifetimes().collect::<Vec<_>>().is_empty() {
         return syn::Error::new_spanned(
             &ident,
             "Cannot derive QuickCheck for a type with lifetimes yet",
