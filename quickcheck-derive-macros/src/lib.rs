@@ -1,23 +1,22 @@
 use std::u64;
 
-use proc_macro::{self, TokenStream};
-use proc_macro2::{Literal, Span};
-use quote::{IdentFragment, ToTokens, format_ident, quote};
-use syn::{DeriveInput, Field, Ident, LitInt, Type, parse_macro_input, punctuated::Punctuated};
+use proc_macro::{self};
+use proc_macro2::{Span, TokenStream};
+use quote::{ToTokens, format_ident, quote};
+use syn::{
+    DataEnum, DeriveInput, Field, FieldsNamed, FieldsUnnamed, Ident, LitInt, Type,
+    parse_macro_input,
+};
 
 fn generate_product_shrink<
     Iter: IntoIterator<Item = Field> + Clone,
     IdentKind: Clone + ToTokens + ToString,
 >(
     fields: &Iter,
-    constructor: impl Fn(
-        &Type,
-        &IdentKind,
-        &Vec<(IdentKind, proc_macro2::TokenStream)>,
-    ) -> proc_macro2::TokenStream,
+    constructor: impl Fn(&Type, &IdentKind, &Vec<(IdentKind, TokenStream)>) -> TokenStream,
     make_ident: impl Fn(&str) -> IdentKind,
-    self_helper: impl Fn(Ident, &IdentKind, usize) -> proc_macro2::TokenStream,
-) -> proc_macro2::TokenStream {
+    self_helper: impl Fn(Ident, &IdentKind, usize) -> TokenStream,
+) -> TokenStream {
     let self_copies = fields
         .clone()
         .into_iter()
@@ -35,7 +34,7 @@ fn generate_product_shrink<
         })
         .collect::<Vec<_>>();
 
-    let cloning_iterator_madness: proc_macro2::TokenStream = fields
+    let cloning_iterator_madness: TokenStream = fields
         .clone()
         .into_iter()
         .enumerate()
@@ -93,13 +92,9 @@ fn generate_product_shrink_simple<
     IdentKind: Clone + ToTokens + ToString,
 >(
     fields: &Iter,
-    constructor: impl Fn(
-        &Type,
-        &IdentKind,
-        &Vec<(IdentKind, proc_macro2::TokenStream)>,
-    ) -> proc_macro2::TokenStream,
+    constructor: impl Fn(&Type, &IdentKind, &Vec<(IdentKind, TokenStream)>) -> TokenStream,
     make_ident: impl Fn(&str) -> IdentKind,
-) -> proc_macro2::TokenStream {
+) -> TokenStream {
     generate_product_shrink(
         fields,
         constructor,
@@ -108,12 +103,7 @@ fn generate_product_shrink_simple<
     )
 }
 
-fn make_enum_puller(
-    pull: usize,
-    others: usize,
-    variant: &Ident,
-    source: &Ident,
-) -> proc_macro2::TokenStream {
+fn make_enum_puller(pull: usize, others: usize, variant: &Ident, source: &Ident) -> TokenStream {
     let v_puller = [quote! {v}];
     let pull_pattern = (0..(pull))
         .map(|_| quote! {_})
@@ -127,214 +117,225 @@ fn make_enum_puller(
     }}
 }
 
-#[proc_macro_derive(QuickCheck)]
-pub fn derive(input: TokenStream) -> TokenStream {
-    let DeriveInput { ident, data, .. } = parse_macro_input!(input);
-    let (shrink_impl, arbitray_impl) = match data {
-        syn::Data::Struct(data_struct) => match data_struct.fields {
-            syn::Fields::Named(fields_named) => {
-                let field_arbitrary_generators = fields_named
-                    .named
-                    .iter()
-                    .map(|field| {
-                        let identifier = &field.ident;
-                        let ty = &field.ty;
-                        quote! {
-                            #identifier: <#ty as ::quickcheck::Arbitrary>::arbitrary(g)
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                (
-                    generate_product_shrink_simple(
-                        &fields_named.named,
-                        |ty, ident, other_idents| {
-                            let other_idents_initialisers = other_idents
-                                .iter()
-                                .map(|(ident, toks)| {
-                                    quote! {#ident: #toks}
-                                })
-                                .collect::<Vec<_>>();
-                            quote! {
-                                ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
-                                    move |e| Self {#ident: e, #(#other_idents_initialisers),*})
-                            }
-                        },
-                        |ident_str| Ident::new(ident_str, Span::call_site()),
-                    ),
-                    quote! {
-                        Self {
-                            #(#field_arbitrary_generators),*
-                        }
-                    },
-                )
-            }
-            syn::Fields::Unnamed(fields_unnamed) => {
-                let field_arbitrary_generators = fields_unnamed
-                    .unnamed
-                    .iter()
-                    .map(|field| {
-                        let ty = &field.ty;
-                        quote! {
-                            <#ty as ::quickcheck::Arbitrary>::arbitrary(g)
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                (
-                    generate_product_shrink_simple::<_, LitInt>(
-                        &fields_unnamed.unnamed,
-                        |ty, ident, other_idents| {
-                            let mut idents_all = other_idents.clone();
-                            idents_all.push((ident.clone(), quote! {e}));
-                            idents_all.sort_by(|(a, _), (b, _)| {
-                                a.base10_parse::<u64>()
-                                    .unwrap()
-                                    .cmp(&b.base10_parse().unwrap())
-                            });
-                            let initialiser_list = idents_all
-                                .iter()
-                                .map(|(_, stream)| stream)
-                                .collect::<Vec<_>>();
+struct ArbitraryImpl {
+    arbitrary: TokenStream,
+    shrink: TokenStream,
+}
 
-                            quote! {
-                                ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
-                                    move |e| Self(#(#initialiser_list),*))
-                            }
-                        },
-                        |ident_str| LitInt::new(ident_str, Span::call_site()),
-                    ),
-                    quote! {
-                        Self(#(#field_arbitrary_generators),*)
-                    },
-                )
+fn make_named_struct_arbitrary(fields_named: &FieldsNamed) -> ArbitraryImpl {
+    let field_arbitrary_generators = fields_named
+        .named
+        .iter()
+        .map(|field| {
+            let identifier = &field.ident;
+            let ty = &field.ty;
+            quote! {
+                #identifier: <#ty as ::quickcheck::Arbitrary>::arbitrary(g)
             }
-            syn::Fields::Unit => (quote! {::quickcheck::empty_shrinker()}, quote! {Self}),
+        })
+        .collect::<Vec<_>>();
+    ArbitraryImpl {
+        shrink: generate_product_shrink_simple(
+            &fields_named.named,
+            |ty, ident, other_idents| {
+                let other_idents_initialisers = other_idents
+                    .iter()
+                    .map(|(ident, toks)| {
+                        quote! {#ident: #toks}
+                    })
+                    .collect::<Vec<_>>();
+                quote! {
+                    ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
+                        move |e| Self {#ident: e, #(#other_idents_initialisers),*})
+                }
+            },
+            |ident_str| Ident::new(ident_str, Span::call_site()),
+        ),
+        arbitrary: quote! {
+            Self {
+                #(#field_arbitrary_generators),*
+            }
         },
-        syn::Data::Enum(data_enum) => {
-            let num_variants = data_enum.variants.len();
-            let initialisers = data_enum
-                .variants
-                .iter()
-                .map(|variant| {
-                    (
-                        &variant.ident,
-                        match variant.fields.len() {
-                            0 => quote! {},
-                            _ => {
-                                let field_arbitrary_generators = variant
-                                    .fields
-                                    .iter()
-                                    .map(|field| {
-                                        let ty = &field.ty;
-                                        quote! {<#ty as ::quickcheck::Arbitrary>::arbitrary(g)}
-                                    })
-                                    .collect::<Vec<_>>();
-                                quote! {(#(#field_arbitrary_generators),*)}
-                            }
-                        },
-                    )
-                })
-                .map(|initialiser| {
-                    let ident = initialiser.0;
-                    let initialiser_list = initialiser.1;
-                    quote! {Self::#ident #initialiser_list}
-                })
-                .enumerate()
-                .map(|(index, constructor)| {
-                    quote! {#index => #constructor}
-                })
-                .collect::<Vec<_>>();
+    }
+}
 
-            let enum_name = &ident;
-            let arm_matchers = data_enum
-                .variants
-                .iter()
-                .map(|variant| {
-                    let variant_ident = &variant.ident;
-                    let shrinker = generate_product_shrink::<_, LitInt>(
-                        &variant.fields,
-                        |ty, ident, other_idents| {
-                            let mut idents_all = other_idents.clone();
-                            idents_all.push((ident.clone(), quote! {e}));
-                            idents_all.sort_by(|(a, _), (b, _)| {
-                                a.base10_parse::<u64>()
-                                    .unwrap()
-                                    .cmp(&b.base10_parse().unwrap())
-                            });
-                            let initialiser_list = idents_all
-                                .iter()
-                                .map(|(_, stream)| stream)
-                                .collect::<Vec<_>>();
+fn make_unnamed_struct_arbitrary(fields_unnamed: &FieldsUnnamed) -> ArbitraryImpl {
+    let field_arbitrary_generators = fields_unnamed
+        .unnamed
+        .iter()
+        .map(|field| {
+            let ty = &field.ty;
+            quote! {
+                <#ty as ::quickcheck::Arbitrary>::arbitrary(g)
+            }
+        })
+        .collect::<Vec<_>>();
+    ArbitraryImpl {
+        arbitrary: quote! {
+            Self(#(#field_arbitrary_generators),*)
+        },
+        shrink: generate_product_shrink_simple::<_, LitInt>(
+            &fields_unnamed.unnamed,
+            |ty, ident, other_idents| {
+                let mut idents_all = other_idents.clone();
+                idents_all.push((ident.clone(), quote! {e}));
+                idents_all.sort_by(|(a, _), (b, _)| {
+                    a.base10_parse::<u64>()
+                        .unwrap()
+                        .cmp(&b.base10_parse().unwrap())
+                });
+                let initialiser_list = idents_all
+                    .iter()
+                    .map(|(_, stream)| stream)
+                    .collect::<Vec<_>>();
 
-                            let puller = make_enum_puller(
-                                ident.base10_parse().unwrap(),
-                                other_idents.len(),
-                                &variant.ident,
-                                &Ident::new("self", Span::call_site()),
-                            );
+                quote! {
+                    ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
+                        move |e| Self(#(#initialiser_list),*))
+                }
+            },
+            |ident_str| LitInt::new(ident_str, Span::call_site()),
+        ),
+    }
+}
 
-                            quote! {
-                                ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(
-                                    #puller
-                                ),
-                                move |e| Self::#variant_ident(#(#initialiser_list),*))
-                            }
-                        },
-                        |ident_str| LitInt::new(ident_str, Span::call_site()),
-                        |ident, field, num_fields| {
-                            let puller = make_enum_puller(
-                                field.base10_parse().unwrap(),
-                                num_fields - 1,
-                                variant_ident,
-                                &ident,
-                            );
-                            puller
-                        },
-                    );
-
-                    let underscores = (0..variant.fields.len())
-                        .map(|_| quote! {_})
-                        .collect::<Vec<_>>();
-                    quote! {#enum_name::#variant_ident(#(#underscores),*) => {#shrinker}}
-                })
-                .collect::<Vec<_>>();
-
+fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
+    let num_variants = data_enum.variants.len();
+    let initialisers = data_enum
+        .variants
+        .iter()
+        .map(|variant| {
             (
-                quote! {
-                    match &self {
-                        #(#arm_matchers),*
-                    }
-                },
-                quote! {
-                    match <::core::primitive::usize as ::quickcheck::Arbitrary>::arbitrary(g) % #num_variants {
-                        #(#initialisers),*,
-                        _ => ::core::unreachable!()
+                &variant.ident,
+                match variant.fields.len() {
+                    0 => quote! {},
+                    _ => {
+                        let field_arbitrary_generators = variant
+                            .fields
+                            .iter()
+                            .map(|field| {
+                                let ty = &field.ty;
+                                quote! {<#ty as ::quickcheck::Arbitrary>::arbitrary(g)}
+                            })
+                            .collect::<Vec<_>>();
+                        quote! {(#(#field_arbitrary_generators),*)}
                     }
                 },
             )
-        }
-        syn::Data::Union(_) => (quote! {::quickcheck::empty_shrinker()}, {
-            syn::Error::new_spanned(&ident, "Cannot derive QuickCheck for a union yet")
-                .to_compile_error()
-        }),
+        })
+        .map(|initialiser| {
+            let ident = initialiser.0;
+            let initialiser_list = initialiser.1;
+            quote! {Self::#ident #initialiser_list}
+        })
+        .enumerate()
+        .map(|(index, constructor)| {
+            quote! {#index => #constructor}
+        })
+        .collect::<Vec<_>>();
+
+    let enum_name = &ident;
+    let arm_matchers = data_enum
+        .variants
+        .iter()
+        .map(|variant| {
+            let variant_ident = &variant.ident;
+            let shrinker = generate_product_shrink::<_, LitInt>(
+                &variant.fields,
+                |ty, ident, other_idents| {
+                    let mut idents_all = other_idents.clone();
+                    idents_all.push((ident.clone(), quote! {e}));
+                    idents_all.sort_by(|(a, _), (b, _)| {
+                        a.base10_parse::<u64>()
+                            .unwrap()
+                            .cmp(&b.base10_parse().unwrap())
+                    });
+                    let initialiser_list = idents_all
+                        .iter()
+                        .map(|(_, stream)| stream)
+                        .collect::<Vec<_>>();
+
+                    let puller = make_enum_puller(
+                        ident.base10_parse().unwrap(),
+                        other_idents.len(),
+                        &variant.ident,
+                        &Ident::new("self", Span::call_site()),
+                    );
+
+                    quote! {
+                        ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(
+                            #puller
+                        ),
+                        move |e| Self::#variant_ident(#(#initialiser_list),*))
+                    }
+                },
+                |ident_str| LitInt::new(ident_str, Span::call_site()),
+                |ident, field, num_fields| {
+                    let puller = make_enum_puller(
+                        field.base10_parse().unwrap(),
+                        num_fields - 1,
+                        variant_ident,
+                        &ident,
+                    );
+                    puller
+                },
+            );
+
+            let underscores = (0..variant.fields.len())
+                .map(|_| quote! {_})
+                .collect::<Vec<_>>();
+            quote! {#enum_name::#variant_ident(#(#underscores),*) => {#shrinker}}
+        })
+        .collect::<Vec<_>>();
+
+    ArbitraryImpl {
+        arbitrary: quote! {
+            match <::core::primitive::usize as ::quickcheck::Arbitrary>::arbitrary(g) % #num_variants {
+                #(#initialisers),*,
+                _ => ::core::unreachable!()
+            }
+        },
+        shrink: quote! {
+            match &self {
+                #(#arm_matchers),*
+            }
+        },
+    }
+}
+
+#[proc_macro_derive(QuickCheck)]
+pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let DeriveInput { ident, data, .. } = parse_macro_input!(input);
+    let ArbitraryImpl { arbitrary, shrink } = match data {
+        syn::Data::Struct(data_struct) => match data_struct.fields {
+            syn::Fields::Named(fields_named) => make_named_struct_arbitrary(&fields_named),
+            syn::Fields::Unnamed(fields_unnamed) => make_unnamed_struct_arbitrary(&fields_unnamed),
+            syn::Fields::Unit => ArbitraryImpl {
+                arbitrary: quote! {Self},
+                shrink: quote! {::quickcheck::empty_shrinker()},
+            },
+        },
+        syn::Data::Enum(data_enum) => make_enum_arbitrary(&ident, &data_enum),
+        syn::Data::Union(_) => ArbitraryImpl {
+            shrink: quote! {::quickcheck::empty_shrinker()},
+            arbitrary: {
+                syn::Error::new_spanned(&ident, "Cannot derive QuickCheck for a union yet")
+                    .to_compile_error()
+            },
+        },
     };
     let output = quote! {
         impl ::quickcheck::Arbitrary for #ident
         where
             #ident: ::core::clone::Clone {
             fn arbitrary(g: &mut ::quickcheck::Gen) -> Self {
-                #arbitray_impl
+                #arbitrary
             }
 
             fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-                #shrink_impl
+                #shrink
             }
         }
     };
     output.into()
-}
-
-#[proc_macro]
-pub fn syntax_dump(input: TokenStream) -> TokenStream {
-    eprintln!("{:#?}", &input);
-    input
 }
