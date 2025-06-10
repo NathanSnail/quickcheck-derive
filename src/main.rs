@@ -1,3 +1,6 @@
+use std::marker::PhantomData;
+
+use quickcheck::Arbitrary;
 use quickcheck_derive_macros::QuickCheck;
 
 #[derive(Clone, QuickCheck)]
@@ -29,4 +32,24 @@ enum Something {
     Float(f32),
     Pair(f32, f32),
     Complex(String, f64, f32, i32, String),
+}
+
+#[derive(Clone)]
+struct Useless<'a> {
+    phantom: PhantomData<&'a String>,
+}
+
+impl<'a> Arbitrary for Useless<'static> {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        Self {
+            phantom: PhantomData,
+        }
+    }
+}
+
+#[derive(Clone, QuickCheck)]
+struct Evil<T: Clone> {
+    a: T,
+    b: T,
+    //thing: Useless<'a>,
 }

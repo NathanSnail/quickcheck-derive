@@ -104,14 +104,14 @@ fn generate_product_shrink_simple<
 }
 
 fn make_enum_puller(pull: usize, others: usize, variant: &Ident, source: &Ident) -> TokenStream {
-    let v_puller = [quote! {v}];
+    let v_puller = [quote! {__quickcheck_derive_match_puller}];
     let pull_pattern = (0..(pull))
         .map(|_| quote! {_})
         .chain(v_puller.iter().cloned())
         .chain((pull..others).map(|_| quote! {_}));
 
     quote! {if let Self::#variant(#(#pull_pattern),*) = &#source {
-        v
+        __quickcheck_derive_match_puller
     } else {
         ::core::unreachable!()
     }}
@@ -146,7 +146,7 @@ fn make_named_struct_arbitrary(fields_named: &FieldsNamed) -> ArbitraryImpl {
                     .collect::<Vec<_>>();
                 quote! {
                     ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
-                        move |e| Self {#ident: e, #(#other_idents_initialisers),*})
+                        move |__quickcheck_derive_moving| Self {#ident: __quickcheck_derive_moving, #(#other_idents_initialisers),*})
                 }
             },
             |ident_str| Ident::new(ident_str, Span::call_site()),
@@ -178,7 +178,7 @@ fn make_unnamed_struct_arbitrary(fields_unnamed: &FieldsUnnamed) -> ArbitraryImp
             &fields_unnamed.unnamed,
             |ty, ident, other_idents| {
                 let mut idents_all = other_idents.clone();
-                idents_all.push((ident.clone(), quote! {e}));
+                idents_all.push((ident.clone(), quote! {__quickcheck_derive_moving}));
                 idents_all.sort_by(|(a, _), (b, _)| {
                     a.base10_parse::<u64>()
                         .unwrap()
@@ -191,7 +191,7 @@ fn make_unnamed_struct_arbitrary(fields_unnamed: &FieldsUnnamed) -> ArbitraryImp
 
                 quote! {
                     ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(&self.#ident),
-                        move |e| Self(#(#initialiser_list),*))
+                        move |__quickcheck_derive_moving| Self(#(#initialiser_list),*))
                 }
             },
             |ident_str| LitInt::new(ident_str, Span::call_site()),
@@ -244,7 +244,7 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
                 &variant.fields,
                 |ty, ident, other_idents| {
                     let mut idents_all = other_idents.clone();
-                    idents_all.push((ident.clone(), quote! {e}));
+                    idents_all.push((ident.clone(), quote! {__quickcheck_derive_moving}));
                     idents_all.sort_by(|(a, _), (b, _)| {
                         a.base10_parse::<u64>()
                             .unwrap()
@@ -266,7 +266,7 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
                         ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(
                             #puller
                         ),
-                        move |e| Self::#variant_ident(#(#initialiser_list),*))
+                        move |__quickcheck_derive_moving| Self::#variant_ident(#(#initialiser_list),*))
                     }
                 },
                 |ident_str| LitInt::new(ident_str, Span::call_site()),
@@ -305,7 +305,12 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
 
 #[proc_macro_derive(QuickCheck)]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let DeriveInput { ident, data, .. } = parse_macro_input!(input);
+    let DeriveInput {
+        ident,
+        data,
+        generics,
+        ..
+    } = parse_macro_input!(input);
     let ArbitraryImpl { arbitrary, shrink } = match data {
         syn::Data::Struct(data_struct) => match data_struct.fields {
             syn::Fields::Named(fields_named) => make_named_struct_arbitrary(&fields_named),
@@ -324,10 +329,49 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             },
         },
     };
+
+    let generics_unconstrained = generics
+        .lifetimes()
+        .map(|lifetime| lifetime.lifetime.to_token_stream())
+        .chain(
+            generics
+                .type_params()
+                .map(|type_param| type_param.ident.to_token_stream()),
+        )
+        .collect::<Vec<_>>();
+
+    let generics_arbitrary = generics
+        .lifetimes()
+        .map(|lifetime| lifetime.to_token_stream())
+        .chain(
+            generics
+                .type_params()
+                .map(|type_param| quote! {#type_param + ::quickcheck::Arbitrary}),
+        )
+        .collect::<Vec<_>>();
+
+    let generics_unconstrained_tokens = match generics_unconstrained.len() {
+        0 => quote! {},
+        _ => quote! {<#(#generics_unconstrained),*>},
+    };
+    let generics_arbitrary_tokens = match generics_arbitrary.len() {
+        0 => quote! {},
+        _ => quote! {<#(#generics_arbitrary),*>},
+    };
+
+    if generics.lifetimes().collect::<Vec<_>>().len() != 0 {
+        return syn::Error::new_spanned(
+            &ident,
+            "Cannot derive QuickCheck for a type with lifetimes yet",
+        )
+        .to_compile_error()
+        .into();
+    }
+
     let output = quote! {
-        impl ::quickcheck::Arbitrary for #ident
+        impl #generics_arbitrary_tokens ::quickcheck::Arbitrary for #ident #generics_unconstrained_tokens
         where
-            #ident: ::core::clone::Clone {
+            #ident #generics_unconstrained_tokens : ::core::clone::Clone {
             fn arbitrary(g: &mut ::quickcheck::Gen) -> Self {
                 #arbitrary
             }
