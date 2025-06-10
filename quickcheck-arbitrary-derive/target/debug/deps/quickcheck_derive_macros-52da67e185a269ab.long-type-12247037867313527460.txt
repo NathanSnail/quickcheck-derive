@@ -1,0 +1,1 @@
+std::iter::Chain<Map<std::ops::Range<{integer}>, {closure@src/lib.rs:222:85: 222:88}>, std::slice::Iter<'_, proc_macro2::TokenStream>>

@@ -77,22 +77,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickcheck-derive"
-version = "0.1.0"
-dependencies = [
- "quickcheck",
- "quickcheck-derive-macros",
- "quickcheck_macros",
-]
-
-[[package]]
-name = "quickcheck-derive-macros"
+name = "quickcheck-arbitrary-derive"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quickcheck",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "quickcheck-derive"
+version = "0.1.0"
+dependencies = [
+ "quickcheck",
+ "quickcheck-arbitrary-derive",
+ "quickcheck_macros",
 ]
 
 [[package]]
