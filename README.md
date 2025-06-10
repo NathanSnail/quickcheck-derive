@@ -51,5 +51,5 @@ You should see that the test fails, and that the minimal example produced is jus
 
 ## Limitations
 
-* Does *not* support union types
-* Does *not* support lifetime parameters
+ * Does *not* support union types
+ * Does *not* support lifetime parameters
