@@ -1,1 +1,0 @@
-std::iter::Chain<Map<syn::generics::Lifetimes<'_>, {closure@src/lib.rs:335:14: 335:24}>, Map<syn::generics::TypeParams<'_>, {closure@src/lib.rs:336:43: 336:55}>>
