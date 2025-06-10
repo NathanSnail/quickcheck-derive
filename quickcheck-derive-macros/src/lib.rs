@@ -5,17 +5,22 @@ use proc_macro2::{Literal, Span};
 use quote::{IdentFragment, ToTokens, format_ident, quote};
 use syn::{DeriveInput, Field, Ident, LitInt, Type, parse_macro_input, punctuated::Punctuated};
 
-fn generate_product_shrink<PunctKind, IdentKind: Clone + ToTokens + ToString>(
-    fields: &Punctuated<Field, PunctKind>,
+fn generate_product_shrink<
+    Iter: IntoIterator<Item = Field> + Clone,
+    IdentKind: Clone + ToTokens + ToString,
+>(
+    fields: &Iter,
     constructor: impl Fn(
         &Type,
         &IdentKind,
         &Vec<(IdentKind, proc_macro2::TokenStream)>,
     ) -> proc_macro2::TokenStream,
     make_ident: impl Fn(&str) -> IdentKind,
+    self_helper: impl Fn(Ident, &IdentKind, usize) -> proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let self_copies = fields
-        .iter()
+        .clone()
+        .into_iter()
         .enumerate()
         .map(|(idx, field)| {
             let ident = field
@@ -30,8 +35,9 @@ fn generate_product_shrink<PunctKind, IdentKind: Clone + ToTokens + ToString>(
         })
         .collect::<Vec<_>>();
 
-    let cloning_iterator_madness = fields
-        .iter()
+    let cloning_iterator_madness: proc_macro2::TokenStream = fields
+        .clone()
+        .into_iter()
         .enumerate()
         .map(|(idx, field)| {
             let ident = make_ident(
@@ -42,7 +48,8 @@ fn generate_product_shrink<PunctKind, IdentKind: Clone + ToTokens + ToString>(
                     .unwrap_or(idx.to_string()),
             );
             let other_idents = fields
-                .iter()
+                .clone()
+                .into_iter()
                 .enumerate()
                 .map(|(idx, field)| {
                     make_ident(
@@ -55,23 +62,69 @@ fn generate_product_shrink<PunctKind, IdentKind: Clone + ToTokens + ToString>(
                 })
                 .filter(|e| e.to_string() != ident.to_string())
                 .map(|field_ident| {
-                    let unique_self = format_ident!("self_{}", ident.to_string());
+                    let unique_self_toks = self_helper(
+                        format_ident!("self_{}", ident.to_string()),
+                        &field_ident,
+                        fields.clone().into_iter().collect::<Vec<_>>().len(),
+                    );
                     (
                         field_ident.clone(),
-                        quote! {::core::clone::Clone::clone(&#unique_self.#field_ident)},
+                        quote! {::core::clone::Clone::clone(#unique_self_toks)},
                     )
                 })
                 .collect::<Vec<_>>();
             constructor(&field.ty, &ident, &other_idents)
         })
+        .collect::<Vec<_>>()
+        .iter()
         .rev()
+        .cloned()
         .reduce(|a, b| quote! {::std::iter::Iterator::chain(#a, #b)})
-        .unwrap_or(quote! {});
+        .unwrap_or(quote! {})
+        .into();
 
     quote! {
         #(#self_copies)*
         ::std::boxed::Box::new(#cloning_iterator_madness)
     }
+}
+fn generate_product_shrink_simple<
+    Iter: IntoIterator<Item = Field> + Clone,
+    IdentKind: Clone + ToTokens + ToString,
+>(
+    fields: &Iter,
+    constructor: impl Fn(
+        &Type,
+        &IdentKind,
+        &Vec<(IdentKind, proc_macro2::TokenStream)>,
+    ) -> proc_macro2::TokenStream,
+    make_ident: impl Fn(&str) -> IdentKind,
+) -> proc_macro2::TokenStream {
+    generate_product_shrink(
+        fields,
+        constructor,
+        make_ident,
+        |unique_self, field_ident, _| quote! {&#unique_self.#field_ident},
+    )
+}
+
+fn make_enum_puller(
+    pull: usize,
+    others: usize,
+    variant: &Ident,
+    source: &Ident,
+) -> proc_macro2::TokenStream {
+    let v_puller = [quote! {v}];
+    let pull_pattern = (0..(pull))
+        .map(|_| quote! {_})
+        .chain(v_puller.iter().cloned())
+        .chain((pull..others).map(|_| quote! {_}));
+
+    quote! {if let Self::#variant(#(#pull_pattern),*) = &#source {
+        v
+    } else {
+        ::core::unreachable!()
+    }}
 }
 
 #[proc_macro_derive(QuickCheck)]
@@ -92,7 +145,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     })
                     .collect::<Vec<_>>();
                 (
-                    generate_product_shrink(
+                    generate_product_shrink_simple(
                         &fields_named.named,
                         |ty, ident, other_idents| {
                             let other_idents_initialisers = other_idents
@@ -116,7 +169,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 )
             }
             syn::Fields::Unnamed(fields_unnamed) => {
-                eprintln!("{:?}", fields_unnamed);
                 let field_arbitrary_generators = fields_unnamed
                     .unnamed
                     .iter()
@@ -128,13 +180,12 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     })
                     .collect::<Vec<_>>();
                 (
-                    generate_product_shrink::<_, LitInt>(
+                    generate_product_shrink_simple::<_, LitInt>(
                         &fields_unnamed.unnamed,
                         |ty, ident, other_idents| {
                             let mut idents_all = other_idents.clone();
                             idents_all.push((ident.clone(), quote! {e}));
                             idents_all.sort_by(|(a, _), (b, _)| {
-                                eprintln!("{:?}", a.to_string());
                                 a.base10_parse::<u64>()
                                     .unwrap()
                                     .cmp(&b.base10_parse().unwrap())
@@ -149,14 +200,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                                     move |e| Self(#(#initialiser_list),*))
                             }
                         },
-                        |ident_str| {
-                            eprintln!(
-                                "|{}, {}|",
-                                &ident_str,
-                                ident_str.parse::<u64>().unwrap_or(u64::MAX)
-                            );
-                            LitInt::new(ident_str, Span::call_site())
-                        },
+                        |ident_str| LitInt::new(ident_str, Span::call_site()),
                     ),
                     quote! {
                         Self(#(#field_arbitrary_generators),*)
@@ -199,9 +243,66 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     quote! {#index => #constructor}
                 })
                 .collect::<Vec<_>>();
+
+            let enum_name = &ident;
+            let arm_matchers = data_enum
+                .variants
+                .iter()
+                .map(|variant| {
+                    let variant_ident = &variant.ident;
+                    let shrinker = generate_product_shrink::<_, LitInt>(
+                        &variant.fields,
+                        |ty, ident, other_idents| {
+                            let mut idents_all = other_idents.clone();
+                            idents_all.push((ident.clone(), quote! {e}));
+                            idents_all.sort_by(|(a, _), (b, _)| {
+                                a.base10_parse::<u64>()
+                                    .unwrap()
+                                    .cmp(&b.base10_parse().unwrap())
+                            });
+                            let initialiser_list = idents_all
+                                .iter()
+                                .map(|(_, stream)| stream)
+                                .collect::<Vec<_>>();
+
+                            let puller = make_enum_puller(
+                                ident.base10_parse().unwrap(),
+                                other_idents.len(),
+                                &variant.ident,
+                                &Ident::new("self", Span::call_site()),
+                            );
+
+                            quote! {
+                                ::std::iter::Iterator::map(<#ty as ::quickcheck::Arbitrary>::shrink(
+                                    #puller
+                                ),
+                                move |e| Self::#variant_ident(#(#initialiser_list),*))
+                            }
+                        },
+                        |ident_str| LitInt::new(ident_str, Span::call_site()),
+                        |ident, field, num_fields| {
+                            let puller = make_enum_puller(
+                                field.base10_parse().unwrap(),
+                                num_fields - 1,
+                                variant_ident,
+                                &ident,
+                            );
+                            puller
+                        },
+                    );
+
+                    let underscores = (0..variant.fields.len())
+                        .map(|_| quote! {_})
+                        .collect::<Vec<_>>();
+                    quote! {#enum_name::#variant_ident(#(#underscores),*) => {#shrinker}}
+                })
+                .collect::<Vec<_>>();
+
             (
                 quote! {
-                    ::quickcheck::empty_shrinker()
+                    match &self {
+                        #(#arm_matchers),*
+                    }
                 },
                 quote! {
                     match <::core::primitive::usize as ::quickcheck::Arbitrary>::arbitrary(g) % #num_variants {

@@ -39,15 +39,9 @@ struct Pair(f32, f32);
 #[derive(Clone, QuickCheck)]
 struct Unit;
 
-#[derive(Clone, QuickCheck)]
-enum Something {
-    Int(i32),
-    Float(f32),
-    Pair(f32, f32),
-}
-
 fn main() {
     let x = Pair(2.0, 4.0);
+    let y = Something::Pair(2.3, 4.5);
     syntax_dump!(x.0);
     println!("Hello, world!");
 }
@@ -62,4 +56,12 @@ struct Vector3 {
 #[derive(Clone, QuickCheck)]
 struct Thing {
     x: i32,
+}
+
+#[derive(Clone, QuickCheck)]
+enum Something {
+    Int(i32),
+    Float(f32),
+    Pair(f32, f32),
+    Complex(String, f64, f32, i32, String),
 }
