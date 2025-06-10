@@ -42,12 +42,12 @@ You should see that the test fails, and that the minimal example produced is jus
 
 ## Features
 
-* Implements both `arbitrary` and `shrink`
-* Works on:
-* * Named Structs
-* * Unnamed Structs
-* * Enums
-* Supports generic type paramaters
+ * Implements both `arbitrary` and `shrink`
+ * Works on:
+   * Named Structs
+   * Unnamed Structs
+   * Enums
+ * Supports generic type paramaters
 
 ## Limitations
 
