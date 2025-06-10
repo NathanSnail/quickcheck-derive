@@ -1,7 +1,7 @@
 use std::clone;
 
 use quickcheck::{Arbitrary, Gen};
-use quickcheck_derive_macros::QuickCheck;
+use quickcheck_derive_macros::{QuickCheck, syntax_dump};
 
 fn shrink(v3: Vector3) -> Box<dyn Iterator<Item = Vector3>> {
     let v3_x = v3.clone();
@@ -47,6 +47,8 @@ enum Something {
 }
 
 fn main() {
+    let x = Pair(2.0, 4.0);
+    syntax_dump!(x.0);
     println!("Hello, world!");
 }
 
