@@ -390,8 +390,10 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
     }
 }
 
-/// Generates an implementation of `quickcheck::Arbitrary`
+/// Generates an implementation of `quickcheck::Arbitrary`.
+///
 /// You can annotate an enum variant with `#[quickcheck(recursive = None | Linear | Exponential)]` to allow for testing of potentially infinitely large types
+///
 /// ```rs
 /// #[derive(Clone, QuickCheck, Debug)]
 /// enum Tree<T> {
@@ -400,6 +402,7 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
 ///     Leaf(T),
 /// }
 /// ```
+///
 /// Use exponential for types that exponentially grow with depth (like trees)
 /// Use linear for types that linearly grow with depth (like linked lists)
 #[proc_macro_derive(QuickCheck, attributes(quickcheck))]
