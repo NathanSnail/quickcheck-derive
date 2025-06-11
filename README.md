@@ -49,7 +49,7 @@ You should see that the test fails, and that the minimal example produced is jus
    * Unnamed Structs
    * Enums
  * Supports generic type paramaters
- * Supports linear and recursive types via `#[quickcheck(recursive = Exponential)]` enum variant attribute
+ * Supports recursive types via `#[quickcheck(recursive = Exponential)]` enum variant attribute
 
 ## Limitations
 
