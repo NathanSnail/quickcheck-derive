@@ -2,6 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/quickcheck-arbitrary-derive.svg)](https://crates.io/crates/quickcheck-arbitrary-derive)
 [![MIT OR UNLICENSE](https://img.shields.io/badge/license-MIT%20OR%20UNLICENSE-blue.svg)](UNLICENSE.md)
+[![docs.rs](https://img.shields.io/docsrs/quickcheck-derive?logo=rust&color=blue)](https://docs.rs/quickcheck-derive)
 
 A `#[derive(QuickCheck)]` macro to automatically implement [QuickCheck](https://github.com/BurntSushi/quickcheck)’s `Arbitrary` (with `arbitrary` + `shrink`) for your types.
 
