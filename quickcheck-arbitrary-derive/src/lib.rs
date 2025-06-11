@@ -275,8 +275,8 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
                     _ => {
                         let attrs = get_enum_attrs(&variant.attrs);
                         let new_g = match attrs.recursive {
-                            RecursiveKind::Exponential => quote! {&mut ::quickcheck::Gen::new(::std::cmp::max(::quickcheck::Gen::size(g) / 2, 0))},
-                            RecursiveKind::Linear => quote! {&mut ::quickcheck::Gen::new(::std::cmp::max(::quickcheck::Gen::size(g) - 1, 0))},
+                            RecursiveKind::Exponential => quote! {&mut ::quickcheck::Gen::new(::std::cmp::max(::quickcheck::Gen::size(g) / 2, 1))},
+                            RecursiveKind::Linear => quote! {&mut ::quickcheck::Gen::new(::std::cmp::max(::quickcheck::Gen::size(g) - 1, 1))},
                             RecursiveKind::None => quote! {g}
                         };
                         let field_arbitrary_generators = variant
@@ -372,7 +372,7 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
     ArbitraryImpl {
         arbitrary: quote! {
             match <::core::primitive::usize as ::quickcheck::Arbitrary>::arbitrary(g) % (
-            if ::quickcheck::Gen::size(g) > 0 {
+            if ::quickcheck::Gen::size(g) > 1 {
                 #num_variants
             } else {
                 #num_variants - #num_recursive

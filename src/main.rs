@@ -1,6 +1,5 @@
 // This is all just testing if the macro works, the actual code is inside quickcheck-derive-macros
 
-use quickcheck::{Arbitrary, Gen};
 use quickcheck_arbitrary_derive::QuickCheck;
 use quickcheck_macros::quickcheck;
 
