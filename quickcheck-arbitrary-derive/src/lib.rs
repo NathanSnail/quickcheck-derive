@@ -215,7 +215,6 @@ fn get_enum_attrs(attrs: &Vec<Attribute>) -> EnumAtrributes {
     const RECURSION_INVALID_KIND: &str =
         "quickcheck recursive strategies must be one of None, Linear, Exponential";
 
-    dbg!(attrs);
     let all_attrs = attrs
         .iter()
         .filter(|attr| attr.meta.path().is_ident("quickcheck"))
