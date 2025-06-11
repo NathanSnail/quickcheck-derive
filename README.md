@@ -15,7 +15,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 quickcheck = "1.0.3"                    # quickcheck runtime
-quickcheck-derive-macros = "0.2.0"    # this derive macro
+quickcheck-derive-macros = "0.2.1"    # this derive macro
 ```
 
 ## Example usage
