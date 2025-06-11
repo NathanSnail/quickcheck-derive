@@ -1,9 +1,13 @@
+use core::panic;
+use std::collections::HashMap;
+
 use proc_macro::{self};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::{
-    DataEnum, DeriveInput, Field, FieldsNamed, FieldsUnnamed, Ident, LitInt, Type,
-    parse_macro_input,
+    Attribute, DataEnum, DeriveInput, Field, FieldsNamed, FieldsUnnamed, Ident, LitInt,
+    MetaNameValue, Path, PathSegment, Type, parse_macro_input, punctuated::Punctuated,
+    token::Comma,
 };
 
 fn generate_product_shrink<
@@ -196,39 +200,120 @@ fn make_unnamed_struct_arbitrary(fields_unnamed: &FieldsUnnamed) -> ArbitraryImp
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum RecursiveKind {
+    None = 0,
+    Linear = 1,
+    Exponential = 2,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct EnumAtrributes {
+    recursive: RecursiveKind,
+}
+
+fn get_enum_attrs(attrs: &Vec<Attribute>) -> EnumAtrributes {
+    const RECURSION_INVALID_KIND: &str =
+        "quickcheck recursive strategies must be one of None, Linear, Exponential";
+
+    dbg!(attrs);
+    let all_attrs = attrs
+        .iter()
+        .filter(|attr| attr.meta.path().is_ident("quickcheck"))
+        .map(|attr| {
+            attr.parse_args_with(Punctuated::<MetaNameValue, Comma>::parse_terminated)
+                .expect("quickcheck attribute must have comma seperated arguments")
+                .iter()
+                .map(|arg| {
+                    (
+                        arg.path
+                            .get_ident()
+                            .expect("quickcheck arguments must be of the form `ident = value`")
+                            .to_string(),
+                        match &arg.value {
+                            syn::Expr::Path(v) => v.path.require_ident().expect("quickcheck recursive strategies must be one of None, Linear, Exponential").to_string(),
+                            _ => panic!("quickcheck values must be literals"),
+                        },
+                    )
+                })
+                .collect::<HashMap<_, _>>()
+        })
+        .map(|key_values| EnumAtrributes {
+            recursive: match key_values
+                .get("recursive")
+                .map(|lit| lit.clone())
+            {
+                Some(v) => match v.as_str() {
+                    "None" => RecursiveKind::None,
+                    "Linear" => RecursiveKind::Linear,
+                    "Exponential" => RecursiveKind::Exponential,
+                    _ => panic!("{}", RECURSION_INVALID_KIND)
+                },
+                None => RecursiveKind::None,
+            },
+        })
+        .collect::<Vec<_>>();
+
+    match all_attrs.len() {
+        0 => EnumAtrributes {
+            recursive: RecursiveKind::None,
+        },
+        1 => all_attrs[0],
+        _ => panic!("quickcheck attribute may only be applied once to each field"),
+    }
+}
+
 fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
     let num_variants = data_enum.variants.len();
-    let initialisers = data_enum
+
+    let mut initialisers = data_enum
         .variants
         .iter()
         .map(|variant| {
             (
                 &variant.ident,
                 match variant.fields.len() {
-                    0 => quote! {},
+                    0 => (quote! {}, RecursiveKind::None),
                     _ => {
+                        let attrs = get_enum_attrs(&variant.attrs);
+                        let new_g = match attrs.recursive {
+                            RecursiveKind::Exponential => quote! {&mut ::quickcheck::Gen::new(::std::cmp::max(::quickcheck::Gen::size(g) / 2, 0))},
+                            RecursiveKind::Linear => quote! {&mut ::quickcheck::Gen::new(::std::cmp::max(::quickcheck::Gen::size(g) - 1, 0))},
+                            RecursiveKind::None => quote! {g}
+                        };
                         let field_arbitrary_generators = variant
                             .fields
                             .iter()
                             .map(|field| {
                                 let ty = &field.ty;
-                                quote! {<#ty as ::quickcheck::Arbitrary>::arbitrary(g)}
+                                quote! {<#ty as ::quickcheck::Arbitrary>::arbitrary(#new_g)}
                             })
                             .collect::<Vec<_>>();
-                        quote! {(#(#field_arbitrary_generators),*)}
+                        (quote! {(#(#field_arbitrary_generators),*)}, attrs.recursive)
                     }
                 },
             )
         })
-        .map(|initialiser| {
-            let ident = initialiser.0;
-            let initialiser_list = initialiser.1;
-            quote! {Self::#ident #initialiser_list}
+        .map(|(ident, (initialiser_list, recursive))| {
+            (quote! {Self::#ident #initialiser_list}, recursive)
         })
         .enumerate()
-        .map(|(index, constructor)| {
-            quote! {#index => #constructor}
+        .map(|(index, (constructor, recursive))| {
+            (quote! {#index => #constructor}, recursive)
         })
+        .collect::<Vec<_>>();
+
+    initialisers.sort_by_key(|(_, recursive)| *recursive);
+    let num_recursive = initialisers
+        .iter()
+        .filter(|(_, recursive)| match recursive {
+            RecursiveKind::None => false,
+            _ => true,
+        })
+        .count();
+    let initialisers = initialisers
+        .into_iter()
+        .map(|(toks, _)| toks)
         .collect::<Vec<_>>();
 
     let enum_name = &ident;
@@ -282,7 +367,7 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
                 .collect::<Vec<_>>();
 
              match variant.fields.is_empty() {
-                true => quote!{#enum_name::#variant_ident => ::std::boxed::Box::new(::quickcheck::empty_shrinker())},
+                true => quote! {#enum_name::#variant_ident => ::std::boxed::Box::new(::quickcheck::empty_shrinker())},
                 false => quote! {#enum_name::#variant_ident(#(#underscores),*) => {#shrinker}} ,
             }
 
@@ -291,7 +376,12 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
 
     ArbitraryImpl {
         arbitrary: quote! {
-            match <::core::primitive::usize as ::quickcheck::Arbitrary>::arbitrary(g) % #num_variants {
+            match <::core::primitive::usize as ::quickcheck::Arbitrary>::arbitrary(g) % (
+            if ::quickcheck::Gen::size(g) > 0 {
+                #num_variants
+            } else {
+                #num_variants - #num_recursive
+            }) {
                 #(#initialisers),*,
                 _ => ::core::unreachable!()
             }
@@ -304,7 +394,7 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
     }
 }
 
-#[proc_macro_derive(QuickCheck)]
+#[proc_macro_derive(QuickCheck, attributes(quickcheck))]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let DeriveInput {
         ident,
