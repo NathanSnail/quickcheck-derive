@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 quickcheck = "1.0.3"
-quickcheck-arbitrary-derive = { version = "0.2.1", path = "quickcheck-arbitrary-derive" }
+quickcheck-arbitrary-derive = { version = "0.2.2", path = "quickcheck-arbitrary-derive" }
 quickcheck_macros = "1.1.0"
