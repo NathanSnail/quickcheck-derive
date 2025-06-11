@@ -403,8 +403,9 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
 /// }
 /// ```
 ///
-/// Use exponential for types that exponentially grow with depth (like trees)
-/// Use linear for types that linearly grow with depth (like linked lists)
+/// Use exponential for types that exponentially grow with depth (like trees).
+///
+/// Use linear for types that linearly grow with depth (like linked lists).
 #[proc_macro_derive(QuickCheck, attributes(quickcheck))]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let DeriveInput {
