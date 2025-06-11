@@ -6,8 +6,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::{
     Attribute, DataEnum, DeriveInput, Field, FieldsNamed, FieldsUnnamed, Ident, LitInt,
-    MetaNameValue, Path, PathSegment, Type, parse_macro_input, punctuated::Punctuated,
-    token::Comma,
+    MetaNameValue, Type, parse_macro_input, punctuated::Punctuated, token::Comma,
 };
 
 fn generate_product_shrink<
@@ -241,7 +240,7 @@ fn get_enum_attrs(attrs: &Vec<Attribute>) -> EnumAtrributes {
         .map(|key_values| EnumAtrributes {
             recursive: match key_values
                 .get("recursive")
-                .map(|lit| lit.clone())
+                .cloned()
             {
                 Some(v) => match v.as_str() {
                     "None" => RecursiveKind::None,
@@ -306,10 +305,7 @@ fn make_enum_arbitrary(ident: &Ident, data_enum: &DataEnum) -> ArbitraryImpl {
     initialisers.sort_by_key(|(_, recursive)| *recursive);
     let num_recursive = initialisers
         .iter()
-        .filter(|(_, recursive)| match recursive {
-            RecursiveKind::None => false,
-            _ => true,
-        })
+        .filter(|(_, recursive)| !matches!(recursive, RecursiveKind::None))
         .count();
     let initialisers = initialisers
         .into_iter()
