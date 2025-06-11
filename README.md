@@ -15,7 +15,7 @@ Dual-licensed under MIT or [UNLICENSE](https://unlicense.org/)
 Add to your `Cargo.toml`:
 
 ```toml
-quickcheck = "1.0.3"                    # quickcheck runtime
+quickcheck = "1.0.3"                  # quickcheck runtime
 quickcheck-derive-macros = "0.2.1"    # this derive macro
 ```
 
