@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "quickcheck-arbitrary-derive"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "proc-macro2",
  "quickcheck",
